@@ -1,0 +1,1254 @@
+;(function(){
+
+    var pubEditInfo             = window.pubEditInfo;
+    var LOGO_PUB_SUBMITURI      = window.PUBCONFIG.PUBURI;
+    var LOGO_UPLOAD_URI         = window.PUBCONFIG.UPLOADURI;
+    var LOGO_UPLOAD_PROGRESSURI = window.PUBCONFIG.PROGRESSURI;
+
+    ZDK.template.LEFT_DELIMITER = '<#';
+    ZDK.template.RIGHT_DELIMITER = '#>';
+
+    var PubEntry = {
+        industryId: -1,
+        catalogId: -1,
+
+        currentStep: 1,
+
+        submiting: 0,
+
+        verified: 0,
+
+        initPubChatPosition: function(){
+            var self = this;
+            $('#j-pub-contact').appendTo($('div.main-con'));
+        },
+        setPubChatPosition: function(){
+            var rootContainerPosRight = $('div.main-con').offset().left + 1000;
+            $('#j-pub-contact').css('left', rootContainerPosRight + 30);
+        },
+
+        /* 类别选择 */
+        bindCatalogEvent: function(){
+            var self = this;
+
+            var pubEditInfo             = window.pubEditInfo;
+            var PUB_STEP_2_URL          =  'http://task.' + pubEditInfo.baseURI + '/pub/step2-';
+
+            $('#j-main-cat ul a').hover(function(e){
+                var industryId = $(this).attr('data-id');
+                $('#industry_id').val( industryId );
+                self.selectMainCatalog( industryId );
+            });
+
+            $('#j-sub-cat ul a').click(function(e){
+                if ( $(this).attr('data-jump') ) {
+                    return;
+                }
+
+                e.preventDefault();
+                e.stopPropagation();
+                $('#catalog_id').val($(this).attr('data-id'));
+                $('#channel_id').val($(this).attr('data-channelid'));
+
+                var jumpUrl = PUB_STEP_2_URL + 'category-' + $('#catalog_id').val();
+                if ( $('#task_id').val() ) {
+                    jumpUrl += '-task-' + $('#task_id').val();
+                }
+                self.clearUnloadEvent();
+                document.location.href = jumpUrl;
+            });
+            var industryId = $('#industry_id').val();
+            var catalogId = $('#catalog_id').val();
+            if ( industryId && catalogId ) {
+                this.selectSpecialCatrgory(industryId, catalogId);
+            }
+            this.setSubCatHeight();
+            this.initCatSearch();
+
+            this.initUnloadEvent();
+        },
+
+        initCatSearch: function( makeSuggestHTML, onEnter  ){
+            var suggestTipsObj = $('#j-cat-search-tips');
+            var searchInput = $('#cat-search-input');
+            var currentPos = -1;
+            var searchXHR;
+            var self = this;
+
+            suggestTipsObj.delegate('a', 'mousedown', function(){
+                self.clearUnloadEvent();
+            });
+
+            searchInput.on('keyup', function( evt ){
+                evt.preventDefault();
+
+                var val = $(this).val();
+                var keyCode = evt.keyCode;
+
+                if ( keyCode != 13 && keyCode != '38' && keyCode != '40' ) {
+                    if ( !val.length ) {
+                        suggestTipsObj.hide();
+                        return;
+                    }
+                    sendRequest( val );
+                }
+            });
+            searchInput.on('keydown', function( evt ){
+                var keyCode = evt.keyCode;
+                if ( keyCode == '13' ) {
+                    evt.preventDefault();
+                    (onEnter || processEnter)();
+                    currentPos = -1;
+                } else if ( keyCode == '38' || keyCode == '40' ) {
+                    evt.preventDefault();
+                    processKeyUpDown( (keyCode == '38' ? 'up': 'down') );
+                }
+            });
+
+            function sendRequest( val ){
+                if ( searchXHR ) {
+                    searchXHR.abort();
+                }
+                searchXHR = $.get( pubEditInfo.searchCat, {key: val} , function ( json ) {
+                    makeSuggestTips( json );
+                }, 'json');
+            }
+
+            function makeSuggestTips( json ){
+                if ( json.msg.length && json.state == 1 ) {
+                    suggestTipsObj.html( (makeSuggestHTML || buildSugDom)( json.msg ) );
+                    suggestTipsObj.show();
+                } else {
+                    suggestTipsObj.html( '<span>对不起，没有找到这个分类</span>' );
+                    suggestTipsObj.show();
+                }
+            }
+
+            function buildSugDom( data ){
+                var html = '';
+                for ( var i = 0; i < data.length; i++ ) {
+                    html += '<a href="' + getCatUrl( data[i].virtual_id ) + '">' + data[i].virtual_name + '</a>';
+                }
+                return html;
+            }
+
+            function getCatUrl( catId ){
+                return pubEditInfo.catURI + catId
+            }
+
+            function processKeyUpDown( type ){
+                var suggestCats = suggestTipsObj.find('a');
+                var maxPos = suggestCats.size() - 1;
+                if ( currentPos == -1 ) {
+                    currentPos = maxPos + 1;
+                }
+                if ( suggestCats.size() ) {
+                    currentPos = currentPos + ( type == 'up' ? '-1' : '1' )*1;
+                    if ( currentPos < 0 ) {
+                        currentPos = maxPos;
+                    }
+                    if ( currentPos > maxPos ) {
+                        currentPos = 0;
+                    }
+                    selectCat( currentPos );
+
+                }
+            }
+
+            function processEnter(){
+                var selectCat = suggestTipsObj.find('a.selected-suggest-cat');
+                if ( selectCat.size() ) {
+                    self.clearUnloadEvent();
+                    document.location = selectCat.attr('href');
+                }
+            }
+
+            function selectCat( index ){
+                suggestTipsObj.find('a').removeClass('selected-suggest-cat');
+                var selectedCat = suggestTipsObj.children().eq( index );
+                selectedCat.addClass( 'selected-suggest-cat' );
+                searchInput.focus().val(selectedCat.html());
+            }
+        },
+
+        setSubCatHeight: function(){
+            var mainCatHeight = $('#j-main-cat').height();
+            if ( mainCatHeight ) {
+                $('#j-sub-cat').css('height', mainCatHeight);
+            }
+        },
+
+        selectMainCatalog: function( industryId ){
+            $('#j-main-cat ul a').removeClass('selected');
+            $('#j-sub-cat .cat-list').hide();
+            $('#j-sub-cat').removeClass('sub-cat-empty').show().css('visibility', 'visible');
+            $('#industry-id-' + industryId).addClass('selected');
+            $('#catlist-id-' + industryId).show();
+            $('#j-main-cat-name').html($('#industry-id-' + industryId).html());
+            $('#j-sub-cat dl.selected').removeClass('selected');
+            $('#j-sub-cat a.selected').removeClass('selected');
+        },
+
+        /* 离开页面提示 */
+        initUnloadEvent: function(){
+            var confirmMsg = '您的需求尚未提交，确定要离开本页吗？';
+            $(window).bind('beforeunload',function(){
+                if ( /Firefox[\/\s](\d+)/.test(navigator.userAgent) && new Number(RegExp.$1) >= 4) {
+                    if(confirm(confirmMsg)){
+                        history.go();
+                    } else{
+                        window.setTimeout(function() { window.stop(); }, 1);
+                    }
+                } else{
+                    return confirmMsg;
+                }
+            });
+        },
+        clearUnloadEvent: function(){
+            $(window).unbind('beforeunload');
+        },
+
+        selectSpecialCatrgory: function(industryId, catalogId){
+            this.selectMainCatalog(industryId);
+            $('#cat-id-' + catalogId).addClass('selected');
+            $('#cat-id-' + catalogId).parents('dl').addClass('selected');
+        },
+
+        initStep2: function(){
+            var logoForm = $('#pub-form'),
+                logoFormBtn = $('#j-gotoService');
+
+            var self = this;
+
+            this.initFileUpload();
+            this.initUnloadEvent();
+            this.initSelectTpl();
+            this.initUnloadEvent();
+            this.bindExtItemEvents();
+            this.initCaptcha();
+            this.initInputRecord();
+
+            this.on('beforesubmit', function( evt ){
+                return self.initVerifyForm();
+            });
+
+            this.addFormEvent(logoForm, logoFormBtn, 'step2');
+            if ( pubEditInfo.isEdit ) {
+                initAttFiles();
+            }
+            initLocalInfo();
+
+            function initAttFiles(){
+                var extraAffixLis = $('#extraInfoLoading li');
+
+                if( extraAffixLis.length ){
+                    extraAffixLis.each(function(key, val){
+                        var fileName = $(val).find('span.f1').html();
+                        var fid  = $(val).find('a').attr('del-val');
+                        self.extraInfoUploadData[fid] = fid;
+                    });
+                }
+
+                self.updateExtraInfoUpload();
+            }
+
+            function initLocalInfo(){
+                var subjectInfo = ZDK.store.get('subject');
+                var detailsInfo = ZDK.store.get('details');
+                if ( pubEditInfo.isEdit ) {
+                    return;
+                }
+                if ( subjectInfo ) {
+                    $('input[name="key"]').val( subjectInfo );
+                }
+
+                if ( detailsInfo ) {
+                    $('#j-intro').val( detailsInfo );
+                }
+            }
+        },
+        initInputRecord: function(){
+            $('input[name="key"]').keyup(function(){
+                ZDK.store.set('subject', $('input[name="key"]').val());
+            });
+            $('#j-intro').keyup(function(){
+                ZDK.store.set('details', $('#j-intro').val());
+            });
+        },
+        destroyLocalRecord: function(){
+            ZDK.store.remove('details');
+            ZDK.store.remove('subject');
+        },
+        initPubMode: function(){
+            var pubModes = $('div.pub-mode');
+            var lastIndex = pubModes.index($('div.pub-mode-active'));
+
+            pubModes.find('div.pub-mode-title').click(function(){
+                disablePriceInput();
+                var currentMode = $(this).parent();
+                pubModes.addClass('pub-mode-collapsed').removeClass('pub-mode-active');
+                currentMode.removeClass('pub-mode-collapsed').addClass('pub-mode-active');
+                currentMode.find('input[name="mode"]').attr('checked', 'checked');
+                enableCurrentPriceInput( currentMode );
+                activeCurrentMode( currentMode );
+            });
+
+            function activeCurrentMode( mode ){
+                var clientRect = mode[0].getBoundingClientRect();
+                if ( clientRect.top < 0 ) {
+                    window.scrollTo(0, mode.offset().top - 20);
+                }
+            }
+
+            function disablePriceInput(){
+                pubModes.find('input[name="reward"]').attr('disabled', 'disabled');
+            }
+            function enableCurrentPriceInput( mode ){
+                mode.find('input[name="reward"]').removeAttr('disabled');
+            }
+        },
+        watchTenderInput: function(){
+            $('#j-price-input-1').on('keyup', function(){
+                updateInstallment();
+            });
+
+            function updateInstallment(){
+                var rewardVal = $('#j-price-input-1').val();
+                if ( rewardVal > 500 ) {
+                    $('#j-pub-mode-installment').removeAttr('disabled');
+                } else {
+                    $('#j-pub-mode-installment').attr('disabled', 'disabled').removeAttr('checked');
+                }
+            }
+        },
+        watchPieceInput: function(){
+            $('#j-piecenum, #j-pieceamount').on('keyup', function(){
+                updatePieceMoney();
+            });
+
+            function updatePieceMoney(){
+                var num = $('#j-piecenum').val();
+                var amount = $('#j-pieceamount').val();
+                var total = parseFloat( num * amount ) || 0;
+                if ( total > 0 ) {
+                    $('#j-piece-sum').css('visibility', 'visible');
+                    $('#j-piece-sum span').html( total );
+                } else {
+                    $('#j-piece-sum').css('visibility', 'hidden');
+                }
+            }
+        },
+        watchAllotInput: function(){
+            var self = this;
+            $('#j-price-input, input[name="many_amount[0]"], input[name="many_amount[1]"], input[name="many_amount[2]"]').keyup(function(){
+                self.refreshAllotMoney( );
+            });
+        },
+        initCaptcha: function(){
+            $(document).delegate('#j-captcha-img, #j-refresh-captcha', 'click', function( evt ){
+                evt.preventDefault();
+                var seedVal = +new Date();
+                $('#j-captcha-seed').val( seedVal );
+                $('#j-captcha-img').attr('src',  $('#j-captcha-img').attr('data-src') + seedVal );
+            });
+        },
+        showCaptcha: function(){
+            if ( $('#j-captcha-wrap').size() ) {
+                return;
+            }
+            var captchaHTML = $('#j-captcha-area').val();
+            $('#j-captcha-area').replaceWith( captchaHTML );
+        },
+
+        refreshAllotMoney: function(){
+
+            if( !$("#j-price-input").size() ){
+                return;
+            }
+
+            var totalMoney = parseFloat($("#j-price-input").val()) || 0;
+
+            if ( totalMoney > 0 ) {
+                updateAllotItem( $('input[name="many_amount[0]"]'), totalMoney );
+                updateAllotItem( $('input[name="many_amount[1]"]'), totalMoney );
+                updateAllotItem( $('input[name="many_amount[2]"]'), totalMoney );
+            } else {
+                $('#j-allot-multi-detail span.pub-mode-sum').css('visibility', 'hidden');
+            }
+
+            function updateAllotItem( allotInput, totalPrice ){
+                var allotPercent = parseFloat(allotInput.val()) || 0;
+                var allotWrap = allotInput.parents('li.allot-item-wrap');
+                var peopleNum = allotInput.attr('data-num');
+                var total = ( totalPrice * allotPercent / 100 / peopleNum ).toFixed(2);
+                if ( allotPercent > 0 ) {
+                    allotWrap.find('span.pub-mode-sum').css('visibility', 'visible');
+                    allotWrap.find('span.pub-mode-sum span').html( total );
+                } else {
+                    allotWrap.find('span.pub-mode-sum').css('visibility', 'hidden');
+                }
+            }
+        },
+        initStep3: function( type ){
+            type = type || 'common';
+            var self = this;
+            this.verified = 1;
+            this.setEndDate();
+            this.initUnloadEvent();
+            this.refreshAllotMoney();
+            this.watchPieceInput();
+            this.watchTenderInput();
+            this.watchAllotInput();
+            this.initPubMode();
+
+            if( type == 'common' ){
+                this.initPriceService();
+                this.on('beforesubmit', function(){
+                    return self.onCommonStep3Submit();
+                });
+            } else if ( type == 'weibo' ) {
+                this.initWeiboService();
+                this.on('beforesubmit', function(){
+                    return self.onWeiboStep3Submit();
+                });
+            } else if ( type == 'zhufu' ) {
+                this.initZhufuService();
+                this.on('beforesubmit', function(){
+                    return self.onZhufuStep3Submit();
+                });
+            }
+
+            this.addFormEvent($('#pub-form'), $('#logo-action-submit'), 'step3');
+
+
+            this.initTopit();
+        },
+
+        initStep4: function(){
+            var self = this;
+
+            this.initUnloadEvent();
+            $('#logo-action-submit').click(function(){
+                $('input[name="nopay"]').val(0);
+                doSubmit( $(this) );
+            });
+            $('#j-submit-nopay').click(function(){
+                $('input[name="nopay"]').val(1);
+                doSubmit( $(this) );
+            });
+
+            function doSubmit( btn ){
+                if ($('#tongyi').length == 0 || $('#tongyi').attr('checked')) {
+                    self.clearUnloadEvent();
+                    btn.addClass('disabled');
+                    btn.html('提交中...');
+                    $('#pub-form').submit();
+                } else {
+                    ZDK.Tips("请先同意并遵守《猪八戒网需求发布与处理规则》",3000,"error");
+                }
+            }
+
+
+        },
+        initTopit: function(){
+            $('#j-addcat').click(function( evt ){
+                evt.preventDefault();
+                $(this).hide();
+                $('#j-addcat-input').show();
+                $('#j-addcat-input input').focus();
+            });
+
+            $('#j-topitcheck').click(function(){
+                $('#j-topit-wrap').toggle();
+                if( $('#j-topit-wrap').css('display') == 'none' ) {
+                    $('#j-topit-wrap tr.topcat input[type="text"]').val(0);
+                }
+                if( $('#j-ext-service-topitcheck').hasClass('ext-service-topitcheck-active') ){
+                    $('#j-ext-service-topitcheck').removeClass('ext-service-topitcheck-active');
+                } else {
+                    $('#j-ext-service-topitcheck').addClass('ext-service-topitcheck-active');
+                }
+            });
+            this.initCatSearch(function( data ){
+                var html = '';
+                for ( var i = 0; i < data.length; i++ ) {
+                    html += '<a href="javascript:void(0)" data-name="'+ data[i].title  +'" data-price="'+ data[i].price +'" data-id="' + data[i].vid + '">' + data[i].title + '</a>';
+                }
+                return html;
+            }, function(){
+                var selectCat = $('#j-cat-search-tips').find('a.selected-suggest-cat');
+                if ( selectCat.size() ) {
+                    addToTopit( selectCat );
+                }
+            });
+            $('#j-cat-search-tips').delegate('a', 'click', function( evt ){
+                evt.preventDefault();
+
+                addToTopit( $(this) );
+            });
+
+            function addToTopit( node ){
+                var id = $(node).attr('data-id');
+                var catName = $(node).attr('data-name');
+                var price = $(node).attr('data-price');
+
+                if ( isExists( id ) ) {
+                    ZDK.Tips(catName + '分类已经存在', 2 * 1000, 'error');
+                    return;
+                }
+
+                var html = '<tr class="topcat"><td>'+ catName +'</td>' +
+                    '<td><input type="hidden" value="'+ id +'" name="topCat['+ id +']"><input type="text" name="topDay['+ id + ']" value="0">天</td>' +
+                    '<td><span class="noticemsg">￥'+ price +'/天</span></td>' +
+                    '</tr>';
+
+                $(html).insertBefore('#j-topit-act');
+                $('#j-cat-search-tips').hide();
+            }
+
+            function isExists( id ){
+                return $('#j-topit input[value="'+ id +'"]').size();
+            }
+        },
+        setEndDate: function(){
+            if ( $('#j-enddate').val() ) {
+                return;
+            }
+            var curDate = new Date();
+            var newDate= new Date( curDate.getTime() + 3600 * 24 * 7 * 1000 );
+            $('#j-enddate').val( newDate.getFullYear() + "/" + (newDate.getMonth()+1) + "/" + (newDate.getDate()) );
+        },
+        onCommonStep3Submit: function(){
+            var allotType = $('input[name="allot"]:checked').val();
+            var currentModeDom = $('div.pub-mode-active');
+            var currentModeData = currentModeDom.find('input[name="mode"]').val();
+
+            //检查价格
+            if ( currentModeData != 2 ) {
+                if ( !this.checkPriceInput( currentModeDom.find('input[name="reward"]') ) ) {
+                    return false;
+                }
+            }
+
+            //如果是比稿，检查赏金分配
+            if ( currentModeData == 1 ) {
+                if ( !this.checkAllot( allotType ) ) {
+                    return false;
+                }
+            }
+
+            //如果是计件，检查数量和单价
+            if ( currentModeData == 2 ) {
+                if ( !this.checkPieceInput() ) {
+                    return false;
+                }
+            }
+            if ( !this.checkEndDate() ) {
+                return false;
+            }
+        },
+
+        onWeiboStep3Submit: function(){
+
+            if( !this.checkPriceInput() ||
+                !this.checkWeiboAllot() ||
+                !this.checkEndDate()
+                ){
+                return false;
+            }
+        },
+
+        onZhufuStep3Submit: function(){
+            if ( !this.checkSendnumber() ||
+                 !this.checkSendTime() ) {
+                return false;
+            }
+        },
+        checkSendnumber: function(){
+            var sendNumber = $('#j-sendnumber-input').val();
+
+            if ( !/\d+/.test(sendNumber) || sendNumber < 10 ) {
+                ZDK.module.verify.fn.errortips(
+                    $('#j-sendnumber-input'),
+                    $('#j-sendnumber-wrap'),
+                    '至少需要发送10条',
+                    'sendnumber'
+                );
+                return false;
+            }
+            return 1;
+        },
+        checkSendTime: function(){
+            var sendNumber = $('#j-senddate').val().replace(/^\s*|\s$/, '');
+
+            if ( !sendNumber.length ) {
+                ZDK.module.verify.fn.errortips(
+                    $('#j-senddate'),
+                    $('#j-senddate-wrap'),
+                    '请输入发送时间',
+                    'senddate'
+                );
+                return false;
+            }
+            return 1;
+        },
+
+        checkPriceInput: function( inputNode ){
+
+            inputNode = inputNode || $('#j-price-input');
+            //check input
+            var price = inputNode.val();
+
+            var msgLang = {
+                '1': '请输入正确的价格',
+                '2': '请输入价格'
+            };
+            var code;
+            if ( !/^\d+/.test(price) ) {
+                code = 1;
+            } else if( price <= 0 ){
+                code = 2;
+            }
+
+            if ( code ) {
+                ZDK.module.verify.fn.errortips(
+                    inputNode,
+                    inputNode.parent(),
+                    msgLang[ code ],
+                    'price'
+                );
+                return false;
+            }
+            return 1;
+        },
+
+        checkPieceInput: function(){
+            var num = $('#j-piecenum').val();
+            var amount = $('#j-pieceamount').val();
+            if ( !/\d+/.test(num) ) {
+                ZDK.module.verify.fn.errortips(
+                    $('#j-piecenum'),
+                    $('#j-piecenum').parent(),
+                    '请输入正确的件数',
+                    'piecenum'
+                );
+                return false;
+            }
+            if ( !/^\d+(\.\d+)?$/.test(amount) ) {
+                ZDK.module.verify.fn.errortips(
+                    $('#j-pieceamount'),
+                    $('#j-pieceamount').parent(),
+                    '请输入正确的单价',
+                    'piecenum'
+                );
+                return false;
+            }
+            return 1;
+        },
+
+        checkAllot: function( type ){
+            var pubForm = $('#pub-form');
+            if( type == '1' ){
+                return 1;
+            }
+
+            var totalPrice = $('#j-price-input').val();
+
+            //从老pub.js搞过来的。
+            if ( type == '3' ) {
+                var unitePriceVal = $('#j-pieceamount').val();
+                if(  !/^\d+(?:\.\d{1,2})?$/.test( unitePriceVal ) ){
+                    ZDK.Tips("每件价格输入错误",3000,"error");
+                    return 0;
+                    //验证是否能整除
+                }else if( (parseFloat(totalPrice) / parseFloat( unitePriceVal )).toString().indexOf(".")>-1 ){
+                    ZDK.Tips("输入的单价不能将预算完全分配",3000,"error");
+                    return 0;
+                }
+            } else if ( type == '2' ) {
+                var many_num;
+                var many_amount = [],all_many_amount = 100;
+                var index = 0;
+                pubForm.find("input[name='many_num[]'],input[name='many_amount[]']").remove();
+                $("#all-bonus-item").find("li").each(function(){
+                    var last =	$(this).find("input[type='text']:last").val();
+                    all_many_amount -= last;
+                    $('<input type="hidden" name="many_amount['+index+']" value='+last+' />').appendTo(pubForm);
+                    index++;
+                });
+
+                many_num = "<input type='hidden' value='1' name='many_num[0]' /><input type='hidden' value='2' name='many_num[1]' /><input type='hidden' value='3' name='many_num[2]' />";
+                $(many_num).appendTo(pubForm);
+                if(all_many_amount != 0){
+                    ZDK.Tips("百分比分配不正确！",3000,"warning");
+                    return false;
+                }else if(isNaN(totalPrice) || totalPrice < 1000){
+                    ZDK.Tips("您的需求分配模式为:多人分享赏金，需求金额须大于1000元",3000,"warning");
+                    return false;
+                }
+            }
+            return 1;
+        },
+
+        checkWeiboAllot: function(){
+            var inputValid = 1;
+            var errorItem;
+
+            $('#j-allocate').find("input[type='text']").each(function( key, item ){
+
+                val = $(item).val();
+
+                if( parseFloat( val ) < 0.1 ){
+                    inputValid = false;
+                    errorItem = $(item);
+                    return false;
+                }
+            });
+            if( !inputValid ){
+                ZDK.module.verify.fn.errortips(
+                    errorItem,
+                    errorItem.parent(),
+                    '分配价格不能低于0.1元',
+                    escape(errorItem.attr('name'))
+                );
+                return false;
+            }
+            return 1;
+        },
+
+        checkEndDate: function(){
+            if( Date.parse($('#j-enddate').val()) < (new Date()).getTime() ){
+                ZDK.module.verify.fn.errortips(
+                    $('#j-enddate'),
+                    $('#j-enddate-wrap'),
+                    '任务结束日期不能小于当前日期',
+                    'enddate'
+                );
+                return false;
+            }
+            return 1;
+        },
+
+        initVerifyForm: function(){
+            var self = this;
+            var logoForm = $('#pub-form'),
+                nextBtn = $('#j-gotoService');
+
+
+            var subjectInput = $('input[name="key"]');
+            var subjectWrap  = subjectInput.parents('.section');
+
+            var introInput   = $('#j-intro');
+            var introInputWrap  = introInput.parents('.section');
+
+            var phoneInput   = $('#logo-phone-number');
+            var phoneInputWrap  = phoneInput.parents('.section');
+
+            var qqInput = $('#logo-qq-number');
+            var qqInputWrap = qqInput.parents('.section');
+
+            var $rangeElem = $('.j_valid_range');
+
+            //为额外属性的checkbox计算选中个数
+            $rangeElem.each(function(i, o){
+                var $target = $(this);
+                $target.data('count', $target.parent().find('input:checked').length);
+            });
+
+            if ( isSubjectError( subjectInput ) ) {
+                ZDK.module.verify.fn.errortips(
+                    subjectInput,
+                    subjectWrap,
+                    '标题字数应该为2到30个',
+                    'subject'
+                );
+                return false;
+            }
+            var $rangeElem = $('.j_valid_range');
+            for(var i = 0; i < $rangeElem.length; i++){
+                var elem = $rangeElem[i];
+                var $elem = $(elem);
+                var errMsg = null;
+                var count = $elem.data('count') || 0;
+                if(elem.hasAttribute('data-range-min') && count < +$elem.attr('data-range-min')){ //比规定的个数少了
+                    errMsg = $elem.attr('data-range-min-error') || ('此项最小值为' + $elem.attr('data-range-min'));
+                }else if(elem.hasAttribute('data-range-max') && count > +$elem.attr('data-range-max')){ //比规定的个数多了
+                    errMsg = $elem.attr('data-range-max-error') || ('此项最大值为' + $elem.attr('data-range-max'));
+                }
+                if(errMsg !== null){
+                    ZDK.module.verify.fn.errortips(
+                        $($elem.nextAll('label').find('input').get(0)),
+                        $elem.parent(),
+                        errMsg,
+                        elem.id
+                    );
+                    return false;
+                }
+            }
+            var $requiredElem = $('.j_valid_required');
+            for(i = 0; i < $requiredElem.length; i++){
+                var elem = $requiredElem[i];
+                var $elem = $(elem);
+                if(!$elem.val()){
+                    ZDK.module.verify.fn.errortips(
+                        $elem,
+                        $elem.parent(),
+                        $elem.attr('data-required-error') || '此项为必填项',
+                        elem.id
+                    );
+                    return false;
+                }
+            }
+
+            if ( !introInput.val().replace(/^\s*|\s$/, '').length ) {
+                ZDK.module.verify.fn.errortips(
+                    introInput,
+                    introInputWrap,
+                    '请输入需求内容',
+                    'intro'
+                );
+                return false;
+            }
+            var phoneVal = phoneInput.val().replace(/^\s*|\s$/, '');
+            if ( !ZDK.module.verify.type.tel(phoneVal) ) {
+                ZDK.module.verify.fn.errortips(
+                    phoneInput,
+                    phoneInputWrap,
+                    '请输入手机号码',
+                    'phone'
+                );
+                return false;
+            }
+
+            var qqVal = qqInput.val().replace(/^\s*|\s$/, '');
+            if ( qqVal && !ZDK.module.verify.type.qq(qqVal) ) {
+                ZDK.module.verify.fn.errortips(
+                    qqInput,
+                    qqInputWrap,
+                    '请输入正确的qq号码',
+                    'qq'
+                );
+                return false;
+            }
+
+
+            var receivePhoneInput   = $('#logo-receivePhone-number');
+
+            if ( receivePhoneInput.size() ) {
+
+                var receivePhoneInputWrap  = receivePhoneInput.parents('.section');
+                var receivePhoneVal = receivePhoneInput.val().replace(/^\s*|\s$/, '');
+
+                if ( !ZDK.module.verify.type.tel(receivePhoneVal) ) {
+                    ZDK.module.verify.fn.errortips(
+                        receivePhoneInput,
+                        receivePhoneInputWrap,
+                        '请输入接收人的手机号码',
+                        'receivephone'
+                    );
+                    return false;
+                }
+            }
+
+            return true;
+
+
+            function isSubjectError( input ){
+                var len = input.val().length;
+                if ( len < 2 || len > 30 ) {
+                    return 1;
+                }
+                return 0;
+            }
+        },
+
+        initPriceService: function(){
+            $('#j-allot-single, #j-allot-piece, #j-allot-multi').click(function(){
+                updateAllotChoice( $(this).val() );
+            });
+
+            $('#j-allot-multi-label, #j-pub-mode-installment-label').click(function(){
+                if ( !$(this).find('input').attr('disabled') ) {
+                    return;
+                }
+                showDisableTip( $(this).find('input') );
+            });
+
+            function showDisableTip( jDom ){
+                var lang = {
+                    'j-allot-multi': '多人分享赏金的模式仅支持1000元以上的需求',
+                    'j-pub-mode-installment': '分期托管仅支持赏金在500元以上的需求'
+                };
+                var size = {
+                    'j-allot-multi': '270',
+                    'j-pub-mode-installment': '240'
+                };
+                var domId = jDom.attr('id');
+                ZDK.module.poptip({
+                    target: jDom,
+                    theme: 'ui-verify-tips service-disable-tip',
+                    content:'<p>'+ lang[domId] +'</p>',
+                    width: size[domId],
+                    cache: false,
+                    zIndex:201
+                });
+            }
+
+            $('#j-price-input').keyup(function(){
+                var money = parseFloat($(this).val());
+                if ( money >= 1000 ) {
+                    $('#j-allot-multi').removeAttr('disabled');
+                } else {
+                    $('#j-allot-multi').attr('disabled', 'disabled').removeAttr('checked');
+                    $('#j-allot-single').attr('checked', 'checked');
+                    $('#j-allot-multi-detail').hide();
+                }
+            });
+            $('#j-price-input, #j-price-input-1').blur(function(){
+                var val = parseFloat($(this).val());
+                if ( isNaN( val ) ) {
+                    return;
+                }
+                $(this).val( val.toFixed(2) );
+            });
+
+            function updateAllotChoice( type ){
+                if( type == 1 ){
+                    $('#j-allot-piece-detail').hide();
+                    $('#j-allot-multi-detail').hide();
+                } else if ( type == 3 ){
+                    $('#j-allot-piece-detail').show();
+                    $('#j-allot-multi-detail').hide();
+                } else {
+                    $('#j-allot-piece-detail').hide();
+                    $('#j-allot-multi-detail').show();
+                }
+            }
+        },
+        initWeiboService: function(){
+
+        },
+        initZhufuService: function(){
+
+        },
+
+        initSelectTpl: function(){
+            var url = window.PUBCONFIG.TPLURI;
+            var selectTPLWindow;
+            $('#j-select-tpl').click(function(e){
+
+                e.preventDefault();
+                e.stopPropagation();
+
+                if ( selectTPLWindow ) {
+                    selectTPLWindow.show();
+                    return;
+                }
+                $.ajax({
+                    url: url,
+                    type: 'get',
+                    dataType: 'html',
+                    success: function( data  ){
+                        selectTPLWindow = ZDK.module.window({
+                            title: '需求模版选择',
+                            content: '<div>'+ data +'</div>',
+                            cache: true,
+                            width: window.ActiveXObject ? 650 : 600,
+                            theme: 'tpl-dialog',
+                            cancel: false,
+                            ok: false
+                        });
+                        bindTPLEvent();
+                    }
+                });
+            });
+
+            function bindTPLEvent(){
+                var idx,model = $("#use-model"),
+                    clo = $("#use-close"),
+                    o = $("#use-ok"),
+                    t = model.find(".tab_i"),
+                    c = model.find(".tab_l");
+                idx = t.index(t.filter(".current"));
+
+                t.bind("click",function(){
+                    var that = $(this),
+                        cur = c.hide().eq(idx);
+
+                    idx = t.index(that);
+                    t.removeClass("current");
+                    that.addClass("current");
+                    //cur.show();
+                    c.eq($(this).index()).show();
+                    return false;
+                });
+
+                clo.bind("click",function(){
+                    selectTPLWindow.hide();
+                    return false;
+                });
+
+                o.bind("click",function(){
+                    var tex = c.eq(idx).find("pre").html();
+                    $("#j-intro").val(tex).focus();
+                    selectTPLWindow.hide();
+                    return false;
+                });
+            }
+        },
+        /**
+         * @desc 多选框的交互
+         */
+        bindExtItemEvents: function(){
+            var $rangeElem = $('.j_valid_range').filter(function(){return this.hasAttribute('data-range-max');}); //具有做多可选项的多选框
+            var $ctn = $rangeElem.parent(); //多选框的外层容器
+            $ctn.delegate('input', 'click', function(e){
+                var $target = $(this);
+                autoDisableCheckbox($target.closest('div'));
+            }).each(function(i, o){ //页面加载时自动检测一次
+                    autoDisableCheckbox($(this));
+                });
+            function autoDisableCheckbox($curCtn){
+                var $curRangElem = $curCtn.find('.j_valid_range');
+                var count = $curCtn.find('input:checked').length; //所有被选中的多选框
+                var isLimit = count == $curRangElem.attr('data-range-max'); //选中总数是否达到极限值
+                $curCtn.find(':checkbox').each(function(i, o){
+                    var $o = $(o);
+                    if(!o.checked && isLimit){ //到了极限，且当前checkbox未选中
+                        $o.attr('disabled', 'disabled');
+                    }else{
+                        $o.removeAttr('disabled');
+                    }
+                });
+            }
+        },
+
+        startSubmit: function( btn ){
+            this.submiting = 1;
+            ZDK.module.btnloading({
+                obj : btn,
+                addClass : "disabled"
+            });
+        },
+        endSubmit: function( btn ){
+            this.submiting = 0;
+            btn.removeClass('disabled');
+            ZDK.module.btnloading.reset( btn );
+        },
+        addFormEvent: function( formObj, btnObj, step ){
+            var self = this;
+
+            btnObj.on('click', doSubmit);
+            $(window).on('hideloginwindow', function(){
+                self.endSubmit( btnObj );
+            });
+
+
+
+            function doSubmit( evt ){
+                evt.preventDefault();
+                if ( self.submiting == 1 ) {
+                    return false;
+                }
+
+                self.startSubmit( btnObj );
+
+                var rs = self.trigger('beforesubmit', [], 1);
+                for( var i = 0; i < rs.length; i++ ){
+                    if( typeof rs[i] != 'undefined' && rs[i] === false ){
+                        self.endSubmit( btnObj );
+                        return false;
+                    }
+                }
+
+                var callback = 'logopubcallback'+(+new Date);
+                formObj.attr('action', PUBCONFIG['PUBURI' + step ] + '&document.domain='+ document.domain +'&jsonpcallback=' + callback);
+                window[callback] = function( json ){
+                    if ( json.state > 0 ) {
+                        self.destroyLocalRecord();
+                        self.clearUnloadEvent();
+                        document.location.href = json.msg;
+                    }else{
+                        if( json.state == -10 ){
+                            self.endSubmit( btnObj );
+                            var popup = ZDK.product.logoguide.showPopup();
+                            SetCookie("logoshowMsg",encodeURIComponent($('#j-intro').val()), null, '/', document.domain);
+                            popup.cancel.click(function(){
+                                btnObj.click();
+                                SetCookie('logoshowMsg', null);
+                            });
+                            $('<input name="showspecial" value="1" type="hidden"/>').appendTo(formObj);
+
+                            return;
+                        } else if ( json.state == -1001 && step == 'step2' ){
+                            self.showCaptcha();
+                            $('#j-captcha-img').click();
+                        }
+                        alert(json.msg);
+                        self.endSubmit( btnObj );
+                    }
+                };
+
+                if (GetCookie("userid")) {
+                    formObj.submit();//提交
+                }else{
+                    aaaa(function(){
+                        formObj.submit();
+                    }, btnObj);
+                }
+            }
+        },
+
+        extraInfoUploadData: {},
+        updateExtraInfoUpload: function(){
+            var inputVal = [];
+            var displayRs = [];
+
+            $.each(this.extraInfoUploadData, function( key, val ){
+                inputVal.push( key );
+                displayRs.push({
+                    ofilename: val['fileName'],
+                    file_id: val['fid']
+                });
+            });
+
+            $('#extraInfoUploadInput').val(inputVal.join('-,'));
+        },
+
+        initFileUpload: function(){
+            var self = this;
+            var extraInfoUploadBtn = $('#extraInfoUploadBtn');
+            var extraInfoLoading = $('#extraInfoLoading');
+
+            var uploadCache = {};
+
+            var extraInfoUpload = ZDK.module.upload({
+                target: extraInfoUploadBtn,
+                no:false,
+                uploadURI: LOGO_UPLOAD_URI + '?ifr=2',
+                progressURI: LOGO_UPLOAD_PROGRESSURI,
+                maxNumber: 5,
+                tips: function(msg){
+                    try {
+                        ZDK.Tips(msg,3000,"warning");
+                    } catch(e){
+                        alert(msg);
+                    }
+                },
+                creatProgressID: function(){
+                    return ZDK.uuid() + Math.random() + ZDK.uuid();
+                }
+            });
+
+
+            extraInfoUpload.on('onprogresreading',function(data){
+                if (!uploadCache[data.progress]) {
+                    var li= $('<li class="clearfix" data-pid="'+data.progress+'"><p class="file clearfix"><span class="fl">'+data.name+'</span><a href="javascript:;" action-type="cancel">删除</a></p><div class="adding clearfix"><p class="adifile"><span style="width:0%"></span></p><p class="fl">正在上传中....</p><a href="javascript:;" class="fr" action-type="cancel">取消</a></div></li>').appendTo(extraInfoLoading);
+                    uploadCache[data.progress] = li;
+                }
+                window.console && console.log('up_start',data);
+                flag = false;
+            });
+            extraInfoUpload.on('onprogresing',function(data){
+
+                var cac = uploadCache[data.progress];
+                var c =((data.uploaded /data.total)*100).toFixed(2)+'%';
+                cac.find('p.fl').html('上传'+c);
+                cac.find('p.adifile span').css('width',c);
+
+                flag = false;
+            });
+            extraInfoUpload.on('onprogresed',function(data){
+                var cac = uploadCache[data.progress];
+                var imgSrcTmp = /"(task\/[^"]*)"/.exec(data.url);
+
+                if( !imgSrcTmp ){
+                    ZDK.Tips(data.url, 800, 'error');
+                    return;
+                }
+                var imgSrc = data.url;
+
+                cac.find('p.fl').html('上传成功!');
+                cac.find('p.adifile span').css('width','100%');
+                cac.find('div').hide();
+                cac.addClass("tsuc");
+                cac.find('p.file a').attr("del-val",data.url);
+
+                self.extraInfoUploadData[data.progress] = imgSrc;
+                updateInput();
+                flag = true;
+            });
+            extraInfoUpload.on('onprogresreadqueue',function(data){
+                if(!uploadCache[data.progress]){
+                    var li= $('<li class="clearfix" data-pid="'+data.progress+'"><p class="file clearfix"><span class="fl">'+data.name+'</span><a href="javascript:;" action-type="del">删除</a></p><div class="adding clearfix"><p class="adifile"><span style="width:0%"></span></p><p class="fl">正在上传中....</p><a href="javascript:;" class="fr" action-type="cancel">取消</a></div></li>').appendTo(extraInfoLoading);
+                    uploadCache[data.progress] = li;
+                }
+                window.console && console.log('up end',data);
+                flag = false;
+                //上传失败，出现错误的时候回调
+            });
+            extraInfoUpload.on('onprogresserror',function(data,cac){
+                if(cac = uploadCache[data.progress]){
+                    cac.find('p.fl').html('上传失败').css('color','red');
+                }
+                flag = false;
+                //取消上传的时候回调
+            });
+            extraInfoUpload.on('oncancelupload',function(){
+            });
+            function delcancel(li,e){
+                var key = li.attr("data-pid");
+                extraInfoUpload.onCancelUpload(key);
+                li.remove();
+                if ( !key ) {
+                    key = li.find('a').attr('del-val');
+                    insertDeletInput(key);
+                }
+                delete self.extraInfoUploadData[key];
+                updateInput();
+                if(!e) return false;
+            }
+            extraInfoLoading.delegate("a","click",function(e){
+                if($(this).attr("action-type") == "cancel"){
+                    e.preventDefault();
+                    e.stopPropagation();
+                    delcancel($(this).parents("li"),$(this));
+                }
+            });
+
+            function updateInput(){
+                var inputVal = [];
+                $.each(self.extraInfoUploadData, function( key, val ){
+                    inputVal.push( val );
+                });
+
+                $('#extraInfoUploadInput').val(inputVal.join('-,'));
+            }
+
+            function insertDeletInput( key ){
+                var delfilesInput = $('#delfiles');
+                var delfileVal = delfilesInput.val();
+                if ( delfileVal ) {
+                    delfilesInput.val(delfileVal + ',' + key )
+                }else{
+                    delfilesInput.val( key );
+                }
+            }
+        }
+    };
+
+    PubEntry.initPubChatPosition();
+    if ( !$.browser.msie || $.browser.version >= 8) {
+        PubEntry.setPubChatPosition();
+        $(window).on('resize', function(){
+            PubEntry.setPubChatPosition();
+        });
+    }
+    $('a.pub-previous').on('mousedown', function(){
+        PubEntry.clearUnloadEvent();
+    });
+
+    $.extend(PubEntry, ZDK.EventEmitter.prototype);
+
+    ZDK.pubEntry = PubEntry;
+})();

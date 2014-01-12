@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project-module
+  type="WEB"
+  name="AutoCamTasks"
+  id="myeclipse.1389419556526"
+  context-root="/AutoCamTasks"
+  j2ee-spec="6.0"
+  archive="AutoCamTasks.war">
+  <attributes>
+    <attribute name="webrootdir" value="WebRoot" />
+  </attributes>
+</project-module>
+

@@ -1,0 +1,21 @@
+@font-face {	
+		font-family: 'ERASBD';
+		src: url(../fonts/ERASBD/ERASBD.eott');	
+		src: local('ERASBD'),
+		local('ERASBD'),
+		url(../fonts/ERASBD/ERASBD.ttff') format('truetype');
+	}  
+  @font-face {	
+	font-family: 'MARCKSCRIPT';
+	src: url(../fonts/MARCKSCRIPT/marckscript.eott');	
+	src: local('MARCKSCRIPT'),
+	   url(http://int.zhubajie.com/assets/fonts/MARCKSCRIPT/marckscript.eot?#iefixx') format('embedded-opentype'),
+	url(../fonts/MARCKSCRIPT/marckscript.ttff') format('truetype');
+}  
+@font-face {	
+		font-family: 'LHANDW';
+		src: url(../fonts/LHANDW/LHANDW.eott');	
+		src: local('LHANDW'),
+		local('LHANDW'),
+		url(../fonts/LHANDW/LHANDW.TTFF') format('truetype');
+	}  
