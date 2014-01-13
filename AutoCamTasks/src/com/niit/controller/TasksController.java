@@ -74,8 +74,20 @@ public class TasksController {
 		ta.setReward(task.getReward());
 		ta.setReleaseTime(task.getReleaseTime());
 		ta.setStopTime(task.getStopTime());
+		ta.setAcceptId(task.getAcceptId());
 		ta.setIfComplete(ifComplete);
 		service.update(ta);
+		
+		if (task.getAcceptId() == null) {
+			
+		} else {
+			UsersDAO udao = new UsersDAO();
+			Users user = udao.findById(task.getAcceptId());
+			int userLevel = user.getUserLevel()+1;
+			user.setUserLevel(userLevel);
+			udao.merge(user);
+
+		}
 		mav.addObject("success","修改任务成功！重新进入个人主页...");
 		mav.addObject("user", task.getUsers());
 		return mav;

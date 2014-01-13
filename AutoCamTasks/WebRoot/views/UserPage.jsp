@@ -53,7 +53,7 @@
    				<td>发布时间</td>
    				<td>截止时间</td>
    				<td>接单人</td>
-   				<td>候选人</td>
+   				
    				<td>操作</td>
    			</tr>
    		<c:forEach items="${task}" var="task">
@@ -76,17 +76,8 @@
 		   				<td>${task.releaseTime}</td>
 		   				<td>${task.stopTime}</td>
 		   				<td><a href="">${task.acceptId}</a></td> 
-		   				<td>
-		   					<c:forEach items="${acceptList}" var="accept">
-		   					<c:choose>
-		   					<c:when test="${accept.tasks.taskId == task.taskId}">
-		   					<a href="">${accept.users.userName}</a>
-		   					</c:when>
-		   					
-		   				</c:choose>	
-		   				</c:forEach>
-		   				</td>
-		   				<td><a href="../delete/${task.taskId}.htm">任务取消</a> <a href="../finish/${task.taskId}.htm">任务完成</a></td>
+		   				
+		   				<td><a href="../single/${task.taskId}.htm">查看详情</a> <a href="../delete/${task.taskId}.htm">任务取消</a> <a href="../finish/${task.taskId}.htm">任务完成</a></td>
 		   			</tr>
 		   		
 		   		
