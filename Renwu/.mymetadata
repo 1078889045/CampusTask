@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project-module
+  type="WEB"
+  name="Renwu"
+  id="myeclipse.1390202425035"
+  context-root="/Renwu"
+  j2ee-spec="6.0"
+  archive="Renwu.war">
+  <attributes>
+    <attribute name="webrootdir" value="WebRoot" />
+  </attributes>
+</project-module>
+
